@@ -4,6 +4,11 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if !launch_allowed() {
+        eprintln!("Daedalus must be launched from Obelisk with an active RELIQUARY license.");
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
@@ -26,4 +31,19 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+fn launch_allowed() -> bool {
+    if cfg!(debug_assertions) {
+        return true;
+    }
+
+    let launched_from_obelisk = std::env::var("RELIQUARY_OBELISK_LAUNCH")
+        .map(|value| value == "1")
+        .unwrap_or(false);
+    let license_file_exists = std::env::var("RELIQUARY_LICENSE_FILE")
+        .map(|path| std::path::Path::new(&path).is_file())
+        .unwrap_or(false);
+
+    launched_from_obelisk && license_file_exists
 }
