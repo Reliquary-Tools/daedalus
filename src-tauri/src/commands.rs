@@ -370,14 +370,10 @@ fn inspect_tool(name: &str) -> ToolStatus {
 }
 
 fn resolve_tool(name: &str) -> Result<PathBuf, String> {
-    let managed = managed_tool_path(name)?;
-    if managed.exists() {
-        return Ok(managed);
-    }
-
-    let legacy_managed = legacy_managed_tool_path(name)?;
-    if legacy_managed.exists() {
-        return Ok(legacy_managed);
+    for managed in managed_tool_candidates(name) {
+        if managed.exists() {
+            return Ok(managed);
+        }
     }
 
     if let Ok(path) = which::which(name) {
@@ -556,15 +552,56 @@ fn ensure_windows_install_supported() -> Result<(), String> {
     }
 }
 
-fn managed_tool_path(name: &str) -> Result<PathBuf, String> {
-    Ok(tools_bin_dir()?.join(executable_name(name)))
-}
-
 fn legacy_managed_tool_path(name: &str) -> Result<PathBuf, String> {
     Ok(app_data_dir()?
         .join("tools")
         .join("bin")
         .join(executable_name(name)))
+}
+
+fn managed_tool_candidates(name: &str) -> Vec<PathBuf> {
+    let executable = executable_name(name);
+    managed_tool_bin_dirs()
+        .into_iter()
+        .map(|path| path.join(&executable))
+        .collect()
+}
+
+fn managed_tool_bin_dirs() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(path) = tools_bin_dir() {
+        candidates.push(path);
+    }
+
+    if let Some(root) = reliquary_workspace_root() {
+        candidates.push(root.join("toolchain").join("bin"));
+    }
+
+    if let Some(root) = reliquary_install_root() {
+        candidates.push(root.join("toolchain").join("bin"));
+    }
+
+    if let Ok(root) = user_reliquary_root() {
+        candidates.push(root.join("toolchain").join("bin"));
+    }
+
+    if let Ok(base) = env::var("ProgramFiles") {
+        candidates.push(
+            PathBuf::from(base)
+                .join("Reliquary")
+                .join("toolchain")
+                .join("bin"),
+        );
+    }
+
+    if let Ok(path) = legacy_managed_tool_path("placeholder") {
+        if let Some(bin_dir) = path.parent() {
+            candidates.push(bin_dir.to_path_buf());
+        }
+    }
+
+    candidates
 }
 
 fn executable_name(name: &str) -> String {
@@ -576,14 +613,9 @@ fn executable_name(name: &str) -> String {
 }
 
 fn is_managed_tool_path(path: &Path) -> bool {
-    let shared = tools_bin_dir()
-        .map(|tools_dir| path.starts_with(tools_dir))
-        .unwrap_or(false);
-    let legacy = app_data_dir()
-        .map(|app_dir| path.starts_with(app_dir.join("tools").join("bin")))
-        .unwrap_or(false);
-
-    shared || legacy
+    managed_tool_bin_dirs()
+        .into_iter()
+        .any(|tools_dir| path.starts_with(tools_dir))
 }
 
 fn tools_bin_dir() -> Result<PathBuf, String> {

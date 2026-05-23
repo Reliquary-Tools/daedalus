@@ -1158,7 +1158,7 @@ function ToolCard(props: { tool?: ToolStatus; fallback: string; installing: bool
       <StatusDot installed={installed()} />
       <div>
         <strong>{props.tool?.name ?? props.fallback}</strong>
-        <span>{installed() ? (props.tool?.managed ? "managed" : "system") : "missing"}</span>
+        <span>{installed() ? toolLocationLabel(props.tool) : "missing"}</span>
       </div>
       <button type="button" disabled={installed() || props.installing} onClick={props.onInstall}>
         {installed() ? <CheckCircle2 size={15} /> : <Download size={15} />}
@@ -1174,10 +1174,10 @@ function ToolRow(props: { tool?: ToolStatus; fallback: string; installing: boole
   return (
     <article class={`tool-row ${installed() ? "ready" : "missing"}`} title={props.tool?.path ?? props.tool?.error ?? props.fallback}>
       <div>
-        <StatusDot installed={installed()} />
+          <StatusDot installed={installed()} />
         <div>
           <strong>{props.tool?.name ?? props.fallback}</strong>
-          <span>{props.tool?.version ?? props.tool?.error ?? "Not installed"}</span>
+          <span>{installed() ? toolDetailLabel(props.tool) : props.tool?.error ?? "Not installed"}</span>
         </div>
       </div>
       <button type="button" disabled={props.installing} onClick={props.onInstall}>
@@ -1189,6 +1189,23 @@ function ToolRow(props: { tool?: ToolStatus; fallback: string; installing: boole
 
 function StatusDot(props: { installed: boolean }) {
   return <span class={`status-dot ${props.installed ? "ready" : "missing"}`} />;
+}
+
+function toolLocationLabel(tool?: ToolStatus) {
+  const source = tool?.managed ? "managed" : "system";
+  return tool?.path ? `${source} · ${compactPath(tool.path)}` : source;
+}
+
+function toolDetailLabel(tool?: ToolStatus) {
+  return tool?.version ? `${tool.version} · ${compactPath(tool.path)}` : toolLocationLabel(tool);
+}
+
+function compactPath(path?: string) {
+  if (!path) {
+    return "";
+  }
+
+  return path.split(/[\\/]/).slice(-4).join("\\");
 }
 
 function Toggle(props: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
