@@ -24,7 +24,7 @@ npm run dev
 The app is intentionally standalone for now. Shared RELIQUARY behavior such as licensing, update channels, app discovery, and Obelisk integration should later move into shared crates/packages.
 
 ## Licence
-Copyright (c) 2026 Antoine / Seoloon.  
+Copyright (c) 2026 Seoloon.  
 All rights reserved.
 
 You may not copy, modify, distribute, sublicense, or use this source code, in whole or in part, without explicit written permission.
