@@ -28,3 +28,5 @@ Copyright (c) 2026 Seoloon.
 All rights reserved.
 
 You may not copy, modify, distribute, sublicense, or use this source code, in whole or in part, without explicit written permission.
+
+Dev by Seoloon
