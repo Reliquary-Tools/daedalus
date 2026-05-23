@@ -21,7 +21,7 @@ npm run dev
 
 ## Direction
 
-The app is intentionally standalone for now. Shared RELIQUARY behavior such as licensing, update channels, app discovery, and Obelisk integration should later move into shared crates/packages.
+The app is not meant to be standalone. Shared RELIQUARY behavior such as licensing, downloads, update channels, app discovery, are linked to Obelisk.
 
 ## Licence
 Copyright (c) 2026 Seoloon.  
