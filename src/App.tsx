@@ -9,6 +9,7 @@ import {
   Film,
   FolderInput,
   FolderOpen,
+  Landmark,
   ListVideo,
   Music2,
   PackageCheck,
@@ -313,6 +314,20 @@ function App() {
     }
   }
 
+  async function openObelisk() {
+    if (!isTauriRuntime()) {
+      setError("Run Daedalus through Tauri to open Obelisk.");
+      return;
+    }
+
+    try {
+      await invoke("open_obelisk");
+      setError("");
+    } catch (caught) {
+      setError(String(caught));
+    }
+  }
+
   async function readTitle(url: string): Promise<string> {
     try {
       const metadata = await invoke<SourceMetadata>("probe_source", {
@@ -588,14 +603,20 @@ function App() {
           </Show>
         </section>
 
-        <button
-          class={`settings-button ${currentView() === "settings" ? "active" : ""}`}
-          type="button"
-          onClick={() => setCurrentView("settings")}
-        >
-          <Settings size={17} />
-          <span>Settings</span>
-        </button>
+        <div class="side-actions">
+          <button class="obelisk-button" type="button" onClick={openObelisk}>
+            <Landmark size={17} />
+            <span>Obelisk</span>
+          </button>
+          <button
+            class={`settings-button ${currentView() === "settings" ? "active" : ""}`}
+            type="button"
+            onClick={() => setCurrentView("settings")}
+          >
+            <Settings size={17} />
+            <span>Settings</span>
+          </button>
+        </div>
       </aside>
 
       <Show

@@ -1,13 +1,18 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    env, fs,
+    env,
+    ffi::OsStr,
+    fs,
     io::{self, BufRead, BufReader, Cursor, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
 };
 use tauri::{AppHandle, Emitter};
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 const DOWNLOAD_EVENT: &str = "daedalus://download-event";
 const YT_DLP_STABLE_URL: &str =
@@ -19,6 +24,8 @@ const YT_DLP_MASTER_URL: &str =
 const FFMPEG_URL: &str = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
 const DENO_URL: &str =
     "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip";
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Serialize)]
 pub struct ToolStatus {
@@ -152,6 +159,13 @@ pub struct DownloadResult {
 #[tauri::command]
 pub async fn get_system_status() -> Result<SystemStatus, String> {
     tauri::async_runtime::spawn_blocking(system_status)
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn open_obelisk() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(launch_obelisk)
         .await
         .map_err(|error| error.to_string())?
 }
@@ -322,7 +336,7 @@ fn system_status() -> Result<SystemStatus, String> {
 fn inspect_tool(name: &str) -> ToolStatus {
     match resolve_tool(name) {
         Ok(path) => {
-            let version = Command::new(&path)
+            let version = silent_command(&path)
                 .arg("--version")
                 .output()
                 .ok()
@@ -361,6 +375,11 @@ fn resolve_tool(name: &str) -> Result<PathBuf, String> {
         return Ok(managed);
     }
 
+    let legacy_managed = legacy_managed_tool_path(name)?;
+    if legacy_managed.exists() {
+        return Ok(legacy_managed);
+    }
+
     if let Ok(path) = which::which(name) {
         return Ok(path);
     }
@@ -373,7 +392,7 @@ fn resolve_tool(name: &str) -> Result<PathBuf, String> {
 }
 
 fn yt_dlp_command(path: &Path) -> Command {
-    let mut command = Command::new(path);
+    let mut command = silent_command(path);
     command.env("PYTHONIOENCODING", "utf-8");
     command.env("PYTHONUTF8", "1");
     command
@@ -541,6 +560,13 @@ fn managed_tool_path(name: &str) -> Result<PathBuf, String> {
     Ok(tools_bin_dir()?.join(executable_name(name)))
 }
 
+fn legacy_managed_tool_path(name: &str) -> Result<PathBuf, String> {
+    Ok(app_data_dir()?
+        .join("tools")
+        .join("bin")
+        .join(executable_name(name)))
+}
+
 fn executable_name(name: &str) -> String {
     if cfg!(windows) {
         format!("{name}.exe")
@@ -550,13 +576,33 @@ fn executable_name(name: &str) -> String {
 }
 
 fn is_managed_tool_path(path: &Path) -> bool {
-    tools_bin_dir()
+    let shared = tools_bin_dir()
         .map(|tools_dir| path.starts_with(tools_dir))
-        .unwrap_or(false)
+        .unwrap_or(false);
+    let legacy = app_data_dir()
+        .map(|app_dir| path.starts_with(app_dir.join("tools").join("bin")))
+        .unwrap_or(false);
+
+    shared || legacy
 }
 
 fn tools_bin_dir() -> Result<PathBuf, String> {
-    Ok(app_data_dir()?.join("tools").join("bin"))
+    if let Ok(toolchain_dir) = env::var("RELIQUARY_TOOLCHAIN_DIR") {
+        let toolchain_dir = toolchain_dir.trim();
+        if !toolchain_dir.is_empty() {
+            return Ok(PathBuf::from(toolchain_dir).join("bin"));
+        }
+    }
+
+    if let Some(root) = reliquary_workspace_root() {
+        return Ok(root.join("toolchain").join("bin"));
+    }
+
+    if let Some(root) = reliquary_install_root() {
+        return Ok(root.join("toolchain").join("bin"));
+    }
+
+    Ok(user_reliquary_root()?.join("toolchain").join("bin"))
 }
 
 fn download_archive_path() -> Result<PathBuf, String> {
@@ -578,13 +624,17 @@ fn remove_legacy_archive_files(output_dir: &Path) {
 }
 
 fn app_data_dir() -> Result<PathBuf, String> {
+    Ok(user_reliquary_root()?.join("Daedalus"))
+}
+
+fn user_reliquary_root() -> Result<PathBuf, String> {
     let base_dir = env::var("LOCALAPPDATA")
         .map(PathBuf::from)
         .or_else(|_| env::var("XDG_DATA_HOME").map(PathBuf::from))
         .or_else(|_| env::var("HOME").map(|home| PathBuf::from(home).join(".local").join("share")))
         .map_err(|_| "Unable to find a user data directory for Daedalus tools".to_string())?;
 
-    Ok(base_dir.join("RELIQUARY").join("Daedalus"))
+    Ok(base_dir.join("RELIQUARY"))
 }
 
 fn normalize_output_dir(raw_path: &str) -> Result<PathBuf, String> {
@@ -851,7 +901,10 @@ fn output_template(raw_template: &str, include_playlist: bool) -> String {
         template = template.replace(tag, value);
     }
 
-    if !source.contains("{FILE_EXTENSION}") && !source.contains("{EXT}") && !template.contains("%(ext)") {
+    if !source.contains("{FILE_EXTENSION}")
+        && !source.contains("{EXT}")
+        && !template.contains("%(ext)")
+    {
         template.push_str(".%(ext)s");
     }
 
@@ -1054,6 +1107,112 @@ fn find_common_windows_tool(name: &str) -> Option<PathBuf> {
     }
 
     candidates.into_iter().find(|path| path.exists())
+}
+
+fn launch_obelisk() -> Result<(), String> {
+    let executable = resolve_obelisk_executable()
+        .ok_or_else(|| "Obelisk is not built or installed yet.".to_string())?;
+
+    silent_command(&executable)
+        .spawn()
+        .map_err(|error| format!("Unable to launch Obelisk: {error}"))?;
+
+    Ok(())
+}
+
+fn resolve_obelisk_executable() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(root) = reliquary_workspace_root() {
+        let obelisk_root = root.join("obelisk");
+        candidates.push(
+            obelisk_root
+                .join("src-tauri")
+                .join("target")
+                .join("release")
+                .join("obelisk.exe"),
+        );
+        candidates.push(
+            obelisk_root
+                .join("src-tauri")
+                .join("target")
+                .join("debug")
+                .join("obelisk.exe"),
+        );
+    }
+
+    if let Some(root) = reliquary_install_root() {
+        candidates.push(root.join("obelisk").join("obelisk.exe"));
+        candidates.push(root.join("Obelisk").join("obelisk.exe"));
+    }
+
+    for key in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
+        if let Ok(base) = env::var(key) {
+            let base = PathBuf::from(base);
+            candidates.push(base.join("Obelisk").join("obelisk.exe"));
+            candidates.push(base.join("RELIQUARY").join("obelisk").join("obelisk.exe"));
+            candidates.push(base.join("RELIQUARY").join("Obelisk").join("obelisk.exe"));
+            candidates.push(base.join("Programs").join("Obelisk").join("obelisk.exe"));
+            candidates.push(
+                base.join("Programs")
+                    .join("RELIQUARY")
+                    .join("obelisk")
+                    .join("obelisk.exe"),
+            );
+            candidates.push(
+                base.join("Programs")
+                    .join("RELIQUARY")
+                    .join("Obelisk")
+                    .join("obelisk.exe"),
+            );
+        }
+    }
+
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+fn reliquary_workspace_root() -> Option<PathBuf> {
+    let mut starts = Vec::new();
+
+    if let Ok(path) = env::current_dir() {
+        starts.push(path);
+    }
+
+    if let Ok(path) = env::current_exe() {
+        if let Some(parent) = path.parent() {
+            starts.push(parent.to_path_buf());
+        }
+    }
+
+    for start in starts {
+        for ancestor in start.ancestors() {
+            if ancestor.join("obelisk").is_dir() && ancestor.join("daedalus").is_dir() {
+                return Some(ancestor.to_path_buf());
+            }
+        }
+    }
+
+    None
+}
+
+fn reliquary_install_root() -> Option<PathBuf> {
+    let exe = env::current_exe().ok()?;
+    let app_dir = exe.parent()?;
+    let root = app_dir.parent()?;
+    let app_name = app_dir.file_name()?.to_string_lossy().to_ascii_lowercase();
+
+    matches!(app_name.as_str(), "daedalus" | "chronos" | "obelisk").then(|| root.to_path_buf())
+}
+
+fn silent_command(program: impl AsRef<OsStr>) -> Command {
+    let mut command = Command::new(program);
+
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    command
 }
 
 fn find_executable_under(root: &Path, executable: &str, max_depth: usize) -> Option<PathBuf> {
