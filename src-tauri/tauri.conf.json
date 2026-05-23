@@ -28,6 +28,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "Reliquary",
     "targets": ["msi"],
     "icon": ["icons/icon.ico"]
   }

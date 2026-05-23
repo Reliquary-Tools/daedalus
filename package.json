@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "tauri build && powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\fix-msi-install-root.ps1",
     "dev:frontend": "vite --host 127.0.0.1 --port 1420",
     "build:frontend": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1"
