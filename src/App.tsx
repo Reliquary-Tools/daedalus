@@ -125,7 +125,7 @@ function App() {
   const [embedThumbnail, setEmbedThumbnail] = createSignal(true);
   const [writeSubtitles, setWriteSubtitles] = createSignal(false);
   const [embedChapters, setEmbedChapters] = createSignal(true);
-  const [avoidRedownload, setAvoidRedownload] = createSignal(true);
+  const [avoidRedownload, setAvoidRedownload] = createSignal(false);
   const [concurrentFragments, setConcurrentFragments] = createSignal(4);
   const [skipUnavailable, setSkipUnavailable] = createSignal(true);
   const [ignoreErrors, setIgnoreErrors] = createSignal(false);
@@ -158,6 +158,7 @@ function App() {
   const [isPreparingQueue, setIsPreparingQueue] = createSignal(false);
   const [isDownloading, setIsDownloading] = createSignal(false);
   const [installingTool, setInstallingTool] = createSignal<ToolId>();
+  const [clearingArchive, setClearingArchive] = createSignal(false);
   const [currentView, setCurrentView] = createSignal<AppView>("download");
   const [settingsCategory, setSettingsCategory] = createSignal<SettingsCategory>("general");
   const [error, setError] = createSignal("");
@@ -325,6 +326,25 @@ function App() {
       setError("");
     } catch (caught) {
       setError(String(caught));
+    }
+  }
+
+  async function clearArchive() {
+    if (!isTauriRuntime()) {
+      setError("Run Daedalus through Tauri to clear the download archive.");
+      return;
+    }
+
+    setClearingArchive(true);
+    try {
+      const cleared = await invoke<number>("clear_download_archive");
+      appendLog(cleared > 0 ? `Cleared ${cleared} download archive file(s).` : "Download archive was already empty.", "stdout");
+      setError("");
+    } catch (caught) {
+      setError(String(caught));
+      appendLog(String(caught), "stderr");
+    } finally {
+      setClearingArchive(false);
     }
   }
 
@@ -749,7 +769,7 @@ function App() {
               <Toggle label="Thumbnail" checked={embedThumbnail()} onChange={setEmbedThumbnail} />
               <Toggle label="Subtitles" checked={writeSubtitles()} onChange={setWriteSubtitles} />
               <Toggle label="Chapters" checked={embedChapters()} onChange={setEmbedChapters} />
-              <Toggle label="Archive" checked={avoidRedownload()} onChange={setAvoidRedownload} />
+              <Toggle label="Skip duplicates" checked={avoidRedownload()} onChange={setAvoidRedownload} />
             </div>
           </section>
         </div>
@@ -868,6 +888,20 @@ function App() {
                           </For>
                         </div>
                       </div>
+                    </SettingRow>
+                    <SettingRow
+                      title="Skip previously archived downloads"
+                      description="Uses yt-dlp's download archive to skip media IDs already marked as completed. Keep this off when you want to freely delete and redownload files."
+                    >
+                      <SwitchControl checked={avoidRedownload()} onChange={setAvoidRedownload} />
+                    </SettingRow>
+                    <SettingRow
+                      title="Clear download archive"
+                      description="Forgets remembered media IDs so deleted files can be downloaded again."
+                    >
+                      <button class="secondary-button" type="button" disabled={clearingArchive()} onClick={clearArchive}>
+                        {clearingArchive() ? "Clearing" : "Clear archive"}
+                      </button>
                     </SettingRow>
                     <SettingRow
                       title="Concurrent fragments"

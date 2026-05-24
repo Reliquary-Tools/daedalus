@@ -171,6 +171,13 @@ pub async fn open_obelisk() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn clear_download_archive() -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(clear_archive_files)
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub async fn install_tool(request: InstallToolRequest) -> Result<SystemStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let yt_dlp_channel = request.channel.as_deref().unwrap_or("stable");
@@ -643,6 +650,29 @@ fn download_archive_path() -> Result<PathBuf, String> {
         .map_err(|error| format!("Unable to create archive directory: {error}"))?;
 
     Ok(archive_dir.join("downloads.txt"))
+}
+
+fn clear_archive_files() -> Result<usize, String> {
+    let archive_dir = app_data_dir()?.join("archives");
+    let mut cleared = 0;
+
+    for path in [
+        archive_dir.join("downloads.txt"),
+        archive_dir.join("daedalus-archive.txt"),
+        archive_dir.join(".daedalus-archive.txt"),
+        app_data_dir()?.join("daedalus-archive.txt"),
+        app_data_dir()?.join(".daedalus-archive.txt"),
+    ] {
+        match fs::remove_file(&path) {
+            Ok(()) => cleared += 1,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!("Unable to remove {}: {error}", path.display()));
+            }
+        }
+    }
+
+    Ok(cleared)
 }
 
 fn temp_download_dir() -> Result<PathBuf, String> {
