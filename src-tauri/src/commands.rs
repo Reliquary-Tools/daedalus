@@ -27,6 +27,20 @@ const DENO_URL: &str =
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+struct ObeliskSettings {
+    theme_mode: String,
+}
+
+impl Default for ObeliskSettings {
+    fn default() -> Self {
+        Self {
+            theme_mode: "light".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ToolStatus {
     name: String,
@@ -168,6 +182,11 @@ pub async fn open_obelisk() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(launch_obelisk)
         .await
         .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn get_theme_mode() -> String {
+    read_obelisk_theme_mode()
 }
 
 #[tauri::command]
@@ -697,6 +716,24 @@ fn user_reliquary_root() -> Result<PathBuf, String> {
         .map_err(|_| "Unable to find a user data directory for Daedalus tools".to_string())?;
 
     Ok(base_dir.join("RELIQUARY"))
+}
+
+fn read_obelisk_theme_mode() -> String {
+    user_reliquary_root()
+        .ok()
+        .map(|root| root.join("Obelisk").join("settings.json"))
+        .and_then(|path| fs::read_to_string(path).ok())
+        .and_then(|content| serde_json::from_str::<ObeliskSettings>(&content).ok())
+        .map(|settings| normalize_theme_mode(&settings.theme_mode))
+        .unwrap_or_else(|| "light".to_string())
+}
+
+fn normalize_theme_mode(theme_mode: &str) -> String {
+    if theme_mode.trim().eq_ignore_ascii_case("dark") {
+        "dark".to_string()
+    } else {
+        "light".to_string()
+    }
 }
 
 fn normalize_output_dir(raw_path: &str) -> Result<PathBuf, String> {

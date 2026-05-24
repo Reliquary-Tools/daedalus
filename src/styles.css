@@ -1129,6 +1129,81 @@ textarea {
   background: var(--ink);
 }
 
+html[data-theme="dark"] {
+  --reliquary-bg-main: #141412;
+  --reliquary-bg-soft: #201f1c;
+  --reliquary-bg-card: #1b1a18;
+  --reliquary-bg-elevated: #24231f;
+  --reliquary-text-main: #f4efe6;
+  --reliquary-text-muted: #b8afa2;
+  --reliquary-text-soft: #8d8579;
+  --reliquary-border-soft: #3a362f;
+  --reliquary-border-strong: #514a40;
+  --reliquary-accent-soft: #3a3021;
+  --reliquary-accent-dark: #e0bd78;
+  --app-accent-dark: #f1b86f;
+  --app-accent-soft: rgba(216, 148, 58, 0.2);
+  --success-dark: #83d7ba;
+  --success-soft: rgba(75, 175, 140, 0.2);
+  --danger-dark: #f39aaa;
+  --danger-soft: rgba(201, 75, 93, 0.2);
+  --warning-dark: #e0bd78;
+  --warning-soft: rgba(176, 141, 87, 0.2);
+  --ink: var(--reliquary-text-main);
+  --ink-soft: #ded6ca;
+  --muted: var(--reliquary-text-muted);
+  --line: rgba(81, 74, 64, 0.72);
+  --line-strong: var(--reliquary-border-strong);
+  --paper: var(--reliquary-bg-elevated);
+  --panel: rgba(27, 26, 24, 0.84);
+  --mist: var(--reliquary-bg-main);
+  --shadow: 0 18px 45px rgba(0, 0, 0, 0.26);
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] .app-shell {
+  background:
+    linear-gradient(135deg, rgba(216, 148, 58, 0.13), transparent 38%),
+    linear-gradient(315deg, rgba(176, 141, 87, 0.09), transparent 30%),
+    linear-gradient(180deg, var(--reliquary-bg-main) 0%, var(--reliquary-bg-soft) 100%);
+}
+
+html[data-theme="dark"] .side-panel,
+html[data-theme="dark"] .tool-card,
+html[data-theme="dark"] .queue-item,
+html[data-theme="dark"] .input-panel,
+html[data-theme="dark"] .details-panel,
+html[data-theme="dark"] .console-panel,
+html[data-theme="dark"] .settings-content,
+html[data-theme="dark"] .setting-row,
+html[data-theme="dark"] .tool-row,
+html[data-theme="dark"] .text-field,
+html[data-theme="dark"] .select-field,
+html[data-theme="dark"] .range-field {
+  background: var(--panel);
+}
+
+html[data-theme="dark"] .url-input,
+html[data-theme="dark"] .text-field input,
+html[data-theme="dark"] .select-field select,
+html[data-theme="dark"] .template-input,
+html[data-theme="dark"] .textarea-control,
+html[data-theme="dark"] .template-input input,
+html[data-theme="dark"] .textarea-control textarea,
+html[data-theme="dark"] .settings-button {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+html[data-theme="dark"] .tool-card button,
+html[data-theme="dark"] .tool-row button,
+html[data-theme="dark"] .primary-button,
+html[data-theme="dark"] .settings-button.active,
+html[data-theme="dark"] .tag-list button:hover {
+  color: #141412;
+  background: #f4efe6;
+}
+
 @keyframes rise-in {
   from {
     opacity: 0;

@@ -17,6 +17,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::clear_download_archive,
+            commands::get_theme_mode,
             commands::get_system_status,
             commands::install_tool,
             commands::open_obelisk,
