@@ -1186,18 +1186,39 @@ html[data-theme="dark"] .range-field {
 html[data-theme="dark"] .url-input,
 html[data-theme="dark"] .text-field input,
 html[data-theme="dark"] .select-field select,
+html[data-theme="dark"] .path-control button,
 html[data-theme="dark"] .template-input,
 html[data-theme="dark"] .textarea-control,
 html[data-theme="dark"] .template-input input,
 html[data-theme="dark"] .textarea-control textarea,
+html[data-theme="dark"] .secondary-button,
+html[data-theme="dark"] .icon-button,
+html[data-theme="dark"] .obelisk-button,
 html[data-theme="dark"] .settings-button {
   color: var(--ink);
   background: var(--paper);
 }
 
+html[data-theme="dark"] .mode-switch {
+  background: rgba(81, 74, 64, 0.48);
+}
+
+html[data-theme="dark"] .mode-switch button {
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+html[data-theme="dark"] .mode-switch button:hover,
+html[data-theme="dark"] .settings-nav button:hover {
+  color: var(--ink);
+  background: rgba(244, 239, 230, 0.08);
+}
+
 html[data-theme="dark"] .tool-card button,
 html[data-theme="dark"] .tool-row button,
 html[data-theme="dark"] .primary-button,
+html[data-theme="dark"] .mode-switch button.active,
+html[data-theme="dark"] .settings-nav button.active,
 html[data-theme="dark"] .settings-button.active,
 html[data-theme="dark"] .tag-list button:hover {
   color: #141412;
