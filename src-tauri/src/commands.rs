@@ -20,14 +20,86 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
-struct AppSettings {
+pub struct AppSettings {
     theme_mode: String,
+    output_dir: String,
+    mode: String,
+    quality: String,
+    video_format: String,
+    audio_format: String,
+    include_playlist: bool,
+    embed_metadata: bool,
+    embed_thumbnail: bool,
+    write_subtitles: bool,
+    embed_chapters: bool,
+    avoid_redownload: bool,
+    concurrent_fragments: u8,
+    skip_unavailable: bool,
+    ignore_errors: bool,
+    restrict_filenames: bool,
+    prefer_free_formats: bool,
+    no_check_certificate: bool,
+    write_info_json: bool,
+    keep_intermediate: bool,
+    filename_template: String,
+    write_description: bool,
+    write_thumbnail_file: bool,
+    write_comments: bool,
+    write_playlist_metadata: bool,
+    mark_watched: bool,
+    remove_sponsor_segments: bool,
+    live_from_start: bool,
+    verbose_logs: bool,
+    cookie_browser: String,
+    network_stack: String,
+    rate_limit: String,
+    retry_count: u8,
+    fragment_retry_count: u8,
+    sleep_requests: u8,
+    notify_on_complete: bool,
+    console_height: u16,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme_mode: "light".to_string(),
+            output_dir: String::new(),
+            mode: "video".to_string(),
+            quality: "best".to_string(),
+            video_format: "mp4".to_string(),
+            audio_format: "mp3".to_string(),
+            include_playlist: false,
+            embed_metadata: true,
+            embed_thumbnail: true,
+            write_subtitles: false,
+            embed_chapters: true,
+            avoid_redownload: false,
+            concurrent_fragments: 4,
+            skip_unavailable: true,
+            ignore_errors: false,
+            restrict_filenames: true,
+            prefer_free_formats: false,
+            no_check_certificate: false,
+            write_info_json: false,
+            keep_intermediate: false,
+            filename_template: "{TITLE}.{FILE_EXTENSION}".to_string(),
+            write_description: false,
+            write_thumbnail_file: false,
+            write_comments: false,
+            write_playlist_metadata: false,
+            mark_watched: false,
+            remove_sponsor_segments: false,
+            live_from_start: false,
+            verbose_logs: false,
+            cookie_browser: "none".to_string(),
+            network_stack: "auto".to_string(),
+            rate_limit: "none".to_string(),
+            retry_count: default_retry_count(),
+            fragment_retry_count: default_retry_count(),
+            sleep_requests: 0,
+            notify_on_complete: true,
+            console_height: 150,
         }
     }
 }
@@ -195,6 +267,18 @@ pub fn set_theme_mode(theme_mode: String) -> Result<String, String> {
     settings.theme_mode = normalize_theme_mode(&theme_mode);
     write_app_settings(&settings)?;
     Ok(settings.theme_mode)
+}
+
+#[tauri::command]
+pub fn get_app_settings() -> AppSettings {
+    read_app_settings()
+}
+
+#[tauri::command]
+pub fn set_app_settings(settings: AppSettings) -> Result<AppSettings, String> {
+    let settings = normalize_app_settings(settings);
+    write_app_settings(&settings)?;
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -721,10 +805,7 @@ fn read_app_settings() -> AppSettings {
         .ok()
         .and_then(|path| fs::read_to_string(path).ok())
         .and_then(|content| serde_json::from_str::<AppSettings>(&content).ok())
-        .map(|mut settings| {
-            settings.theme_mode = normalize_theme_mode(&settings.theme_mode);
-            settings
-        })
+        .map(normalize_app_settings)
         .unwrap_or_default()
 }
 
@@ -746,6 +827,65 @@ fn normalize_theme_mode(theme_mode: &str) -> String {
     } else {
         "light".to_string()
     }
+}
+
+fn normalize_app_settings(mut settings: AppSettings) -> AppSettings {
+    settings.theme_mode = normalize_theme_mode(&settings.theme_mode);
+    settings.mode = if settings.mode.trim().eq_ignore_ascii_case("audio") {
+        "audio".to_string()
+    } else {
+        "video".to_string()
+    };
+    settings.quality = normalize_choice(
+        &settings.quality,
+        &["best", "2160", "1440", "1080", "720", "480", "small"],
+        "best",
+    );
+    settings.video_format = normalize_choice(
+        &settings.video_format,
+        &["source", "mp4", "mkv", "webm", "mov"],
+        "mp4",
+    );
+    settings.audio_format = normalize_choice(
+        &settings.audio_format,
+        &["mp3", "m4a", "flac", "wav", "opus"],
+        "mp3",
+    );
+    settings.concurrent_fragments = settings.concurrent_fragments.clamp(1, 16);
+    settings.retry_count = settings.retry_count.min(30);
+    settings.fragment_retry_count = settings.fragment_retry_count.min(30);
+    settings.sleep_requests = settings.sleep_requests.min(10);
+    settings.console_height = settings.console_height.clamp(96, 360);
+    settings.cookie_browser = normalize_choice(
+        &settings.cookie_browser,
+        &[
+            "none", "firefox", "chrome", "edge", "brave", "opera", "vivaldi",
+        ],
+        "none",
+    );
+    settings.network_stack =
+        normalize_choice(&settings.network_stack, &["auto", "ipv4", "ipv6"], "auto");
+    settings.rate_limit = normalize_choice(
+        &settings.rate_limit,
+        &["none", "1M", "2M", "5M", "10M", "25M"],
+        "none",
+    );
+
+    if settings.filename_template.trim().is_empty() {
+        settings.filename_template = "{TITLE}.{FILE_EXTENSION}".to_string();
+    }
+
+    settings
+}
+
+fn normalize_choice(value: &str, allowed: &[&str], fallback: &str) -> String {
+    let trimmed = value.trim();
+    allowed
+        .iter()
+        .find(|candidate| trimmed.eq_ignore_ascii_case(candidate))
+        .copied()
+        .unwrap_or(fallback)
+        .to_string()
 }
 
 fn normalize_output_dir(raw_path: &str) -> Result<PathBuf, String> {

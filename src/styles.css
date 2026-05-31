@@ -875,6 +875,35 @@ textarea {
   color: #ff9db5;
 }
 
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(27, 27, 31, 0.34);
+}
+
+.settings-dialog {
+  width: min(1080px, calc(100vw - 56px));
+  max-height: min(760px, calc(100vh - 56px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: 0 26px 70px rgba(54, 43, 29, 0.22);
+}
+
+.settings-dialog .topbar {
+  padding: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-dialog .settings-layout {
+  padding: 18px;
+}
+
 .settings-page {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1182,6 +1211,15 @@ html[data-theme="dark"] .app-shell {
     linear-gradient(135deg, rgba(216, 148, 58, 0.13), transparent 38%),
     linear-gradient(315deg, rgba(176, 141, 87, 0.09), transparent 30%),
     linear-gradient(180deg, var(--reliquary-bg-main) 0%, var(--reliquary-bg-soft) 100%);
+}
+
+html[data-theme="dark"] .settings-overlay {
+  background: rgba(0, 0, 0, 0.56);
+}
+
+html[data-theme="dark"] .settings-dialog {
+  background: #24231f;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
 }
 
 html[data-theme="dark"] .side-panel,

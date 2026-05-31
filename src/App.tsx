@@ -75,10 +75,50 @@ type LogLine = {
 };
 
 type ToolId = "yt-dlp" | "ffmpeg" | "deno" | "all";
-type AppView = "download" | "settings";
 type SettingsCategory = "general" | "downloads" | "playlists" | "files" | "tools";
 type NetworkStack = "auto" | "ipv4" | "ipv6";
 type ThemeMode = "light" | "dark";
+type DownloadMode = "video" | "audio";
+
+type DaedalusSettings = {
+  theme_mode: ThemeMode;
+  output_dir: string;
+  mode: DownloadMode;
+  quality: string;
+  video_format: string;
+  audio_format: string;
+  include_playlist: boolean;
+  embed_metadata: boolean;
+  embed_thumbnail: boolean;
+  write_subtitles: boolean;
+  embed_chapters: boolean;
+  avoid_redownload: boolean;
+  concurrent_fragments: number;
+  skip_unavailable: boolean;
+  ignore_errors: boolean;
+  restrict_filenames: boolean;
+  prefer_free_formats: boolean;
+  no_check_certificate: boolean;
+  write_info_json: boolean;
+  keep_intermediate: boolean;
+  filename_template: string;
+  write_description: boolean;
+  write_thumbnail_file: boolean;
+  write_comments: boolean;
+  write_playlist_metadata: boolean;
+  mark_watched: boolean;
+  remove_sponsor_segments: boolean;
+  live_from_start: boolean;
+  verbose_logs: boolean;
+  cookie_browser: (typeof cookieBrowsers)[number];
+  network_stack: NetworkStack;
+  rate_limit: string;
+  retry_count: number;
+  fragment_retry_count: number;
+  sleep_requests: number;
+  notify_on_complete: boolean;
+  console_height: number;
+};
 
 const qualityOptions = [
   { value: "best", label: "Best" },
@@ -119,7 +159,7 @@ function App() {
   const [systemStatus, setSystemStatus] = createSignal<SystemStatus>();
   const [urlInput, setUrlInput] = createSignal("");
   const [outputDir, setOutputDir] = createSignal("");
-  const [mode, setMode] = createSignal<"video" | "audio">("video");
+  const [mode, setMode] = createSignal<DownloadMode>("video");
   const [quality, setQuality] = createSignal("best");
   const [videoFormat, setVideoFormat] = createSignal("mp4");
   const [audioFormat, setAudioFormat] = createSignal("mp3");
@@ -161,11 +201,12 @@ function App() {
   const [isDownloading, setIsDownloading] = createSignal(false);
   const [installingTool, setInstallingTool] = createSignal<ToolId>();
   const [clearingArchive, setClearingArchive] = createSignal(false);
-  const [currentView, setCurrentView] = createSignal<AppView>("download");
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [settingsCategory, setSettingsCategory] = createSignal<SettingsCategory>("general");
   const [error, setError] = createSignal("");
   const [themeMode, setThemeModeState] = createSignal<ThemeMode>("light");
   let consoleOutputRef: HTMLDivElement | undefined;
+  let settingsLoaded = false;
 
   const urls = createMemo(() =>
     urlInput()
@@ -203,9 +244,22 @@ function App() {
     });
   });
 
+  createEffect(() => {
+    const settings = collectAppSettings();
+    if (!settingsLoaded || !isTauriRuntime()) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void saveAppSettings(settings);
+    }, 320);
+
+    onCleanup(() => window.clearTimeout(timer));
+  });
+
   onMount(async () => {
     await refreshStatus();
-    await syncThemeSetting();
+    await syncAppSettings();
 
     if (!isTauriRuntime()) {
       return;
@@ -319,22 +373,42 @@ function App() {
     }
   }
 
-  async function syncThemeSetting() {
+  async function syncAppSettings() {
     if (!isTauriRuntime()) {
+      settingsLoaded = true;
       return;
     }
 
     try {
-      const mode = await invoke<string>("get_theme_mode");
-      setThemeModeState(mode === "dark" ? "dark" : "light");
+      const settings = await invoke<DaedalusSettings>("get_app_settings");
+      applyAppSettings(settings);
     } catch {
-      setThemeModeState("light");
+      try {
+        const mode = await invoke<string>("get_theme_mode");
+        setThemeModeState(mode === "dark" ? "dark" : "light");
+      } catch {
+        setThemeModeState("light");
+      }
+    } finally {
+      settingsLoaded = true;
+    }
+  }
+
+  async function saveAppSettings(settings = collectAppSettings()) {
+    try {
+      const savedSettings = await invoke<DaedalusSettings>("set_app_settings", { settings });
+      if (savedSettings.theme_mode !== themeMode()) {
+        applyThemeMode(savedSettings.theme_mode);
+      }
+      setError("");
+    } catch (caught) {
+      setError(String(caught));
     }
   }
 
   async function changeThemeMode(mode: ThemeMode) {
     setThemeModeState(mode);
-    document.documentElement.dataset.theme = mode;
+    applyThemeMode(mode);
 
     if (!isTauriRuntime()) {
       return;
@@ -347,6 +421,91 @@ function App() {
     } catch (caught) {
       setError(String(caught));
     }
+  }
+
+  function applyAppSettings(settings: DaedalusSettings) {
+    const nextTheme = settings.theme_mode === "dark" ? "dark" : "light";
+    applyThemeMode(nextTheme);
+    if (settings.output_dir.trim()) {
+      setOutputDir(settings.output_dir);
+    }
+    setMode(settings.mode === "audio" ? "audio" : "video");
+    setQuality(settings.quality || "best");
+    setVideoFormat(settings.video_format || "mp4");
+    setAudioFormat(settings.audio_format || "mp3");
+    setIncludePlaylist(settings.include_playlist);
+    setEmbedMetadata(settings.embed_metadata);
+    setEmbedThumbnail(settings.embed_thumbnail);
+    setWriteSubtitles(settings.write_subtitles);
+    setEmbedChapters(settings.embed_chapters);
+    setAvoidRedownload(settings.avoid_redownload);
+    setConcurrentFragments(clampNumber(settings.concurrent_fragments, 1, 16, 4));
+    setSkipUnavailable(settings.skip_unavailable);
+    setIgnoreErrors(settings.ignore_errors);
+    setRestrictFilenames(settings.restrict_filenames);
+    setPreferFreeFormats(settings.prefer_free_formats);
+    setNoCheckCertificate(settings.no_check_certificate);
+    setWriteInfoJson(settings.write_info_json);
+    setKeepIntermediate(settings.keep_intermediate);
+    setFilenameTemplate(settings.filename_template || "{TITLE}.{FILE_EXTENSION}");
+    setWriteDescription(settings.write_description);
+    setWriteThumbnailFile(settings.write_thumbnail_file);
+    setWriteComments(settings.write_comments);
+    setWritePlaylistMetadata(settings.write_playlist_metadata);
+    setMarkWatched(settings.mark_watched);
+    setRemoveSponsorSegments(settings.remove_sponsor_segments);
+    setLiveFromStart(settings.live_from_start);
+    setVerboseLogs(settings.verbose_logs);
+    setCookieBrowser(cookieBrowsers.includes(settings.cookie_browser) ? settings.cookie_browser : "none");
+    setNetworkStack(["auto", "ipv4", "ipv6"].includes(settings.network_stack) ? settings.network_stack : "auto");
+    setRateLimit(settings.rate_limit || "none");
+    setRetryCount(clampNumber(settings.retry_count, 0, 30, 10));
+    setFragmentRetryCount(clampNumber(settings.fragment_retry_count, 0, 30, 10));
+    setSleepRequests(clampNumber(settings.sleep_requests, 0, 10, 0));
+    setNotifyOnComplete(settings.notify_on_complete);
+    setConsoleHeight(clampNumber(settings.console_height, 96, 360, 150));
+  }
+
+  function collectAppSettings(): DaedalusSettings {
+    return {
+      theme_mode: themeMode(),
+      output_dir: outputDir(),
+      mode: mode(),
+      quality: quality(),
+      video_format: videoFormat(),
+      audio_format: audioFormat(),
+      include_playlist: includePlaylist(),
+      embed_metadata: embedMetadata(),
+      embed_thumbnail: embedThumbnail(),
+      write_subtitles: writeSubtitles(),
+      embed_chapters: embedChapters(),
+      avoid_redownload: avoidRedownload(),
+      concurrent_fragments: concurrentFragments(),
+      skip_unavailable: skipUnavailable(),
+      ignore_errors: ignoreErrors(),
+      restrict_filenames: restrictFilenames(),
+      prefer_free_formats: preferFreeFormats(),
+      no_check_certificate: noCheckCertificate(),
+      write_info_json: writeInfoJson(),
+      keep_intermediate: keepIntermediate(),
+      filename_template: filenameTemplate(),
+      write_description: writeDescription(),
+      write_thumbnail_file: writeThumbnailFile(),
+      write_comments: writeComments(),
+      write_playlist_metadata: writePlaylistMetadata(),
+      mark_watched: markWatched(),
+      remove_sponsor_segments: removeSponsorSegments(),
+      live_from_start: liveFromStart(),
+      verbose_logs: verboseLogs(),
+      cookie_browser: cookieBrowser(),
+      network_stack: networkStack(),
+      rate_limit: rateLimit(),
+      retry_count: retryCount(),
+      fragment_retry_count: fragmentRetryCount(),
+      sleep_requests: sleepRequests(),
+      notify_on_complete: notifyOnComplete(),
+      console_height: consoleHeight(),
+    };
   }
 
   async function openAppFolder() {
@@ -637,9 +796,9 @@ function App() {
 
         <div class="side-actions">
           <button
-            class={`settings-button ${currentView() === "settings" ? "active" : ""}`}
+            class={`settings-button ${settingsOpen() ? "active" : ""}`}
             type="button"
-            onClick={() => setCurrentView("settings")}
+            onClick={() => setSettingsOpen(true)}
           >
             <Settings size={17} />
             <span>Settings</span>
@@ -647,9 +806,6 @@ function App() {
         </div>
       </aside>
 
-      <Show
-        when={currentView() === "settings"}
-        fallback={
       <section class="workspace" style={{ "grid-template-rows": `auto auto minmax(0, 1fr) ${consoleHeight()}px` }}>
         <header class="topbar">
           <div>
@@ -797,15 +953,16 @@ function App() {
           </div>
         </section>
       </section>
-        }
-      >
-        <section class="workspace settings-page">
+
+      <Show when={settingsOpen()}>
+        <div class="settings-overlay" role="presentation" onClick={() => setSettingsOpen(false)}>
+        <section class="settings-dialog settings-page" role="dialog" aria-modal="true" aria-label="Daedalus settings" onClick={(event) => event.stopPropagation()}>
           <header class="topbar">
             <div>
               <p class="eyebrow">Daedalus</p>
               <h2>Settings</h2>
             </div>
-            <button class="secondary-button" type="button" onClick={() => setCurrentView("download")}>
+            <button class="secondary-button" type="button" onClick={() => setSettingsOpen(false)}>
               <X size={17} />
               <span>Close</span>
             </button>
@@ -1209,6 +1366,7 @@ function App() {
             </main>
           </div>
         </section>
+        </div>
       </Show>
     </main>
   );
@@ -1334,6 +1492,18 @@ function labelFromUrl(url: string) {
 
 function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function applyThemeMode(themeMode: ThemeMode) {
+  document.documentElement.dataset.theme = themeMode;
+}
+
+function clampNumber(value: number, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, value));
 }
 
 export default App;
