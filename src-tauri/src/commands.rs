@@ -4,7 +4,7 @@ use std::{
     env,
     ffi::OsStr,
     fs,
-    io::{self, BufRead, BufReader, Cursor, Read},
+    io::{self, BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -15,15 +15,6 @@ use tauri::{AppHandle, Emitter};
 use std::os::windows::process::CommandExt;
 
 const DOWNLOAD_EVENT: &str = "daedalus://download-event";
-const YT_DLP_STABLE_URL: &str =
-    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
-const YT_DLP_NIGHTLY_URL: &str =
-    "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe";
-const YT_DLP_MASTER_URL: &str =
-    "https://github.com/yt-dlp/yt-dlp-master-builds/releases/latest/download/yt-dlp.exe";
-const FFMPEG_URL: &str = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
-const DENO_URL: &str =
-    "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip";
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -186,9 +177,11 @@ pub async fn open_app_folder() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn open_toolchain_folder() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(|| open_or_create_folder(&tools_bin_dir()?))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(|| {
+        open_tool_location_folder(&["yt-dlp", "ffmpeg", "ffprobe", "deno"])
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -370,7 +363,7 @@ fn system_status() -> Result<SystemStatus, String> {
         ffmpeg: inspect_tool("ffmpeg"),
         deno: inspect_tool("deno"),
         default_output_dir: default_output_dir(),
-        tools_dir: tools_bin_dir()?.to_string_lossy().to_string(),
+        tools_dir: toolchain_location_label(),
     })
 }
 
@@ -411,13 +404,11 @@ fn inspect_tool(name: &str) -> ToolStatus {
 }
 
 fn resolve_tool(name: &str) -> Result<PathBuf, String> {
-    for managed in managed_tool_candidates(name) {
-        if managed.exists() {
-            return Ok(managed);
-        }
+    if let Ok(path) = which::which(name) {
+        return Ok(path);
     }
 
-    if let Ok(path) = which::which(name) {
+    if let Some(path) = find_package_manager_tool(name) {
         return Ok(path);
     }
 
@@ -436,213 +427,220 @@ fn yt_dlp_command(path: &Path) -> Command {
 }
 
 fn install_yt_dlp(channel: &str) -> Result<(), String> {
-    ensure_windows_install_supported()?;
-
-    let bin_dir = tools_bin_dir()?;
-    fs::create_dir_all(&bin_dir)
-        .map_err(|error| format!("Unable to create tools directory: {error}"))?;
-
-    let destination = bin_dir.join("yt-dlp.exe");
-    let temp_destination = bin_dir.join("yt-dlp.exe.download");
-    let bytes = download_bytes(yt_dlp_download_url(channel)?)?;
-
-    fs::write(&temp_destination, bytes)
-        .map_err(|error| format!("Unable to write yt-dlp: {error}"))?;
-    replace_file(&temp_destination, &destination)?;
-
-    Ok(())
-}
-
-fn yt_dlp_download_url(channel: &str) -> Result<&'static str, String> {
     match channel.trim().to_ascii_lowercase().as_str() {
-        "" | "stable" | "release" => Ok(YT_DLP_STABLE_URL),
-        "nightly" => Ok(YT_DLP_NIGHTLY_URL),
-        "master" => Ok(YT_DLP_MASTER_URL),
-        other => Err(format!("Unsupported yt-dlp update channel: {other}")),
+        "" | "stable" | "release" => install_system_tool(SystemTool::YtDlp),
+        other => Err(format!(
+            "The {other} yt-dlp channel is not available through the system package manager. Use the stable package from winget or Homebrew."
+        )),
     }
 }
 
 fn install_ffmpeg() -> Result<(), String> {
-    ensure_windows_install_supported()?;
-
-    let bin_dir = tools_bin_dir()?;
-    fs::create_dir_all(&bin_dir)
-        .map_err(|error| format!("Unable to create tools directory: {error}"))?;
-
-    let bytes = download_bytes(FFMPEG_URL)?;
-    let cursor = Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|error| format!("Unable to read ffmpeg archive: {error}"))?;
-    let mut installed = Vec::new();
-
-    for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|error| format!("Unable to read ffmpeg archive entry: {error}"))?;
-        let normalized_name = entry.name().replace('\\', "/").to_lowercase();
-
-        if !(normalized_name.ends_with("/bin/ffmpeg.exe")
-            || normalized_name.ends_with("/bin/ffprobe.exe"))
-        {
-            continue;
-        }
-
-        let file_name = normalized_name
-            .rsplit('/')
-            .next()
-            .ok_or_else(|| "Unable to read ffmpeg archive file name".to_string())?;
-        let temp_destination = bin_dir.join(format!("{file_name}.download"));
-        let destination = bin_dir.join(file_name);
-        let mut output = fs::File::create(&temp_destination)
-            .map_err(|error| format!("Unable to write {file_name}: {error}"))?;
-
-        io::copy(&mut entry, &mut output)
-            .map_err(|error| format!("Unable to extract {file_name}: {error}"))?;
-        drop(output);
-        replace_file(&temp_destination, &destination)?;
-        installed.push(file_name.to_string());
-    }
-
-    if !installed.iter().any(|name| name == "ffmpeg.exe") {
-        return Err("The downloaded ffmpeg archive did not contain ffmpeg.exe".to_string());
-    }
-
-    Ok(())
+    install_system_tool(SystemTool::Ffmpeg)
 }
 
 fn install_deno() -> Result<(), String> {
-    ensure_windows_install_supported()?;
+    install_system_tool(SystemTool::Deno)
+}
 
-    let bin_dir = tools_bin_dir()?;
-    fs::create_dir_all(&bin_dir)
-        .map_err(|error| format!("Unable to create tools directory: {error}"))?;
+#[derive(Clone, Copy)]
+enum SystemTool {
+    Ffmpeg,
+    YtDlp,
+    Deno,
+}
 
-    let bytes = download_bytes(DENO_URL)?;
-    let cursor = Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|error| format!("Unable to read Deno archive: {error}"))?;
-    let mut installed = false;
+fn install_system_tool(tool: SystemTool) -> Result<(), String> {
+    let install_result = if cfg!(target_os = "windows") {
+        install_with_winget(tool)
+    } else if cfg!(target_os = "macos") {
+        install_with_homebrew(tool)
+    } else {
+        Err("Automatic tool installation is supported on Windows with winget and macOS with Homebrew.".to_string())
+    };
 
-    for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|error| format!("Unable to read Deno archive entry: {error}"))?;
-        let normalized_name = entry.name().replace('\\', "/").to_lowercase();
-
-        if !normalized_name.ends_with("deno.exe") {
-            continue;
+    if let Err(error) = install_result {
+        if verify_system_tool(tool).is_ok() {
+            return Ok(());
         }
-
-        let temp_destination = bin_dir.join("deno.exe.download");
-        let destination = bin_dir.join("deno.exe");
-        let mut output = fs::File::create(&temp_destination)
-            .map_err(|error| format!("Unable to write deno.exe: {error}"))?;
-
-        io::copy(&mut entry, &mut output)
-            .map_err(|error| format!("Unable to extract deno.exe: {error}"))?;
-        drop(output);
-        replace_file(&temp_destination, &destination)?;
-        installed = true;
-        break;
+        return Err(error);
     }
 
-    if !installed {
-        return Err("The downloaded Deno archive did not contain deno.exe".to_string());
+    verify_system_tool(tool)
+}
+
+fn install_with_winget(tool: SystemTool) -> Result<(), String> {
+    let package_id = winget_package_id(tool);
+    let output = silent_command("winget")
+        .args([
+            "install",
+            "--exact",
+            "--id",
+            package_id,
+            "--source",
+            "winget",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+        ])
+        .output()
+        .map_err(|error| format!("Winget is required to install {package_id}: {error}"))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(command_error(
+            &format!("winget install failed for {package_id}"),
+            &output.stderr,
+            &output.stdout,
+        ))
+    }
+}
+
+fn install_with_homebrew(tool: SystemTool) -> Result<(), String> {
+    let formula = homebrew_formula(tool);
+    let output = silent_command("brew")
+        .args(["install", formula])
+        .output()
+        .map_err(|error| format!("Homebrew is required to install {formula}: {error}"))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(command_error(
+            &format!("brew install failed for {formula}"),
+            &output.stderr,
+            &output.stdout,
+        ))
+    }
+}
+
+fn verify_system_tool(tool: SystemTool) -> Result<(), String> {
+    match tool {
+        SystemTool::Ffmpeg => {
+            resolve_tool("ffmpeg")?;
+            resolve_tool("ffprobe")?;
+        }
+        SystemTool::YtDlp => {
+            resolve_tool("yt-dlp")?;
+        }
+        SystemTool::Deno => {
+            resolve_tool("deno")?;
+        }
     }
 
     Ok(())
 }
 
-fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
-    let client = reqwest::blocking::Client::builder()
-        .user_agent("Daedalus/0.1 RELIQUARY")
-        .build()
-        .map_err(|error| format!("Unable to create download client: {error}"))?;
-    let response = client
-        .get(url)
-        .send()
-        .map_err(|error| format!("Unable to download {url}: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("Unable to download {url}: {error}"))?;
-
-    response
-        .bytes()
-        .map(|bytes| bytes.to_vec())
-        .map_err(|error| format!("Unable to read downloaded file: {error}"))
-}
-
-fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
-    if destination.exists() {
-        fs::remove_file(destination)
-            .map_err(|error| format!("Unable to replace {}: {error}", destination.display()))?;
-    }
-
-    fs::rename(source, destination).map_err(|error| {
-        format!(
-            "Unable to move {} into place: {error}",
-            destination.display()
-        )
-    })
-}
-
-fn ensure_windows_install_supported() -> Result<(), String> {
-    if cfg!(windows) {
-        Ok(())
-    } else {
-        Err("Managed tool installation is currently available on Windows only.".to_string())
+fn winget_package_id(tool: SystemTool) -> &'static str {
+    match tool {
+        SystemTool::Ffmpeg => "Gyan.FFmpeg",
+        SystemTool::YtDlp => "yt-dlp.yt-dlp",
+        SystemTool::Deno => "DenoLand.Deno",
     }
 }
 
-fn legacy_managed_tool_path(name: &str) -> Result<PathBuf, String> {
-    Ok(app_data_dir()?
-        .join("tools")
-        .join("bin")
-        .join(executable_name(name)))
+fn homebrew_formula(tool: SystemTool) -> &'static str {
+    match tool {
+        SystemTool::Ffmpeg => "ffmpeg",
+        SystemTool::YtDlp => "yt-dlp",
+        SystemTool::Deno => "deno",
+    }
 }
 
-fn managed_tool_candidates(name: &str) -> Vec<PathBuf> {
+fn find_package_manager_tool(name: &str) -> Option<PathBuf> {
     let executable = executable_name(name);
-    managed_tool_bin_dirs()
-        .into_iter()
-        .map(|path| path.join(&executable))
-        .collect()
-}
 
-fn managed_tool_bin_dirs() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Ok(path) = tools_bin_dir() {
-        candidates.push(path);
-    }
-
-    if let Some(root) = reliquary_workspace_root() {
-        candidates.push(root.join("toolchain").join("bin"));
-    }
-
-    if let Some(root) = reliquary_install_root() {
-        candidates.push(root.join("toolchain").join("bin"));
-    }
-
-    if let Ok(root) = user_reliquary_root() {
-        candidates.push(root.join("toolchain").join("bin"));
-    }
-
-    if let Ok(base) = env::var("ProgramFiles") {
-        candidates.push(
-            PathBuf::from(base)
-                .join("Reliquary")
-                .join("toolchain")
-                .join("bin"),
-        );
-    }
-
-    if let Ok(path) = legacy_managed_tool_path("placeholder") {
-        if let Some(bin_dir) = path.parent() {
-            candidates.push(bin_dir.to_path_buf());
+    for dir in package_manager_tool_dirs() {
+        let candidate = dir.join(&executable);
+        if candidate.exists() {
+            return Some(candidate);
         }
     }
 
+    if cfg!(windows) {
+        for root in winget_package_roots() {
+            if let Some(found) = find_executable_under(&root, &executable, 8) {
+                return Some(found);
+            }
+        }
+    }
+
+    None
+}
+
+fn package_manager_tool_dirs() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if cfg!(windows) {
+        if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+            candidates.push(
+                PathBuf::from(local_app_data)
+                    .join("Microsoft")
+                    .join("WinGet")
+                    .join("Links"),
+            );
+        }
+        if let Ok(program_files) = env::var("ProgramFiles") {
+            candidates.push(PathBuf::from(program_files).join("WinGet").join("Links"));
+        }
+        if let Ok(program_files_x86) = env::var("ProgramFiles(x86)") {
+            candidates.push(
+                PathBuf::from(program_files_x86)
+                    .join("WinGet")
+                    .join("Links"),
+            );
+        }
+        if let Ok(user_profile) = env::var("USERPROFILE") {
+            candidates.push(PathBuf::from(user_profile).join("scoop").join("shims"));
+        }
+        candidates.push(PathBuf::from(r"C:\ProgramData\chocolatey\bin"));
+    }
+
+    if cfg!(target_os = "macos") {
+        candidates.push(PathBuf::from("/opt/homebrew/bin"));
+        candidates.push(PathBuf::from("/usr/local/bin"));
+    }
+
     candidates
+}
+
+fn winget_package_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+        roots.push(
+            PathBuf::from(local_app_data)
+                .join("Microsoft")
+                .join("WinGet")
+                .join("Packages"),
+        );
+    }
+    if let Ok(program_files) = env::var("ProgramFiles") {
+        roots.push(PathBuf::from(program_files).join("WinGet").join("Packages"));
+    }
+    roots
+}
+
+fn toolchain_location_label() -> String {
+    if cfg!(target_os = "windows") {
+        "System PATH / winget".to_string()
+    } else if cfg!(target_os = "macos") {
+        "System PATH / Homebrew".to_string()
+    } else {
+        "System PATH".to_string()
+    }
+}
+
+fn open_tool_location_folder(tools: &[&str]) -> Result<(), String> {
+    for tool in tools {
+        if let Ok(path) = resolve_tool(tool) {
+            if let Some(parent) = path.parent() {
+                return open_or_create_folder(parent);
+            }
+        }
+    }
+
+    Err("No installed system tool location was found. Install the missing tools first.".to_string())
 }
 
 fn executable_name(name: &str) -> String {
@@ -654,28 +652,9 @@ fn executable_name(name: &str) -> String {
 }
 
 fn is_managed_tool_path(path: &Path) -> bool {
-    managed_tool_bin_dirs()
+    package_manager_tool_dirs()
         .into_iter()
         .any(|tools_dir| path.starts_with(tools_dir))
-}
-
-fn tools_bin_dir() -> Result<PathBuf, String> {
-    if let Ok(toolchain_dir) = env::var("RELIQUARY_TOOLCHAIN_DIR") {
-        let toolchain_dir = toolchain_dir.trim();
-        if !toolchain_dir.is_empty() {
-            return Ok(PathBuf::from(toolchain_dir).join("bin"));
-        }
-    }
-
-    if let Some(root) = reliquary_workspace_root() {
-        return Ok(root.join("toolchain").join("bin"));
-    }
-
-    if let Some(root) = reliquary_install_root() {
-        return Ok(root.join("toolchain").join("bin"));
-    }
-
-    Ok(user_reliquary_root()?.join("toolchain").join("bin"))
 }
 
 fn download_archive_path() -> Result<PathBuf, String> {

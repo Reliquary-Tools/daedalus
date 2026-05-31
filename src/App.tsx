@@ -77,7 +77,6 @@ type LogLine = {
 type ToolId = "yt-dlp" | "ffmpeg" | "deno" | "all";
 type AppView = "download" | "settings";
 type SettingsCategory = "general" | "downloads" | "playlists" | "files" | "tools";
-type YtDlpChannel = "stable" | "nightly" | "master";
 type NetworkStack = "auto" | "ipv4" | "ipv6";
 type ThemeMode = "light" | "dark";
 
@@ -154,7 +153,6 @@ function App() {
   const [fragmentRetryCount, setFragmentRetryCount] = createSignal(10);
   const [sleepRequests, setSleepRequests] = createSignal(0);
   const [notifyOnComplete, setNotifyOnComplete] = createSignal(true);
-  const [ytDlpChannel, setYtDlpChannel] = createSignal<YtDlpChannel>("stable");
   const [consoleHeight, setConsoleHeight] = createSignal(150);
   const [queue, setQueue] = createSignal<QueueItem[]>([]);
   const [logs, setLogs] = createSignal<LogLine[]>([]);
@@ -255,7 +253,7 @@ function App() {
           error: "Native bridge unavailable in browser preview.",
         },
         default_output_dir: "Downloads\\Daedalus",
-        tools_dir: "AppData\\Local\\RELIQUARY\\Daedalus\\tools\\bin",
+        tools_dir: "System PATH / winget",
       };
 
       setSystemStatus(status);
@@ -275,23 +273,23 @@ function App() {
 
   async function installTool(tool: ToolId) {
     if (!isTauriRuntime()) {
-      setError("Run Daedalus through Tauri to install managed tools.");
+      setError("Run Daedalus through Tauri to install system tools.");
       return;
     }
 
     setInstallingTool(tool);
     setError("");
-    appendLog(`Installing ${tool}...`, "stdout");
+    appendLog(`Installing ${tool} with the system package manager...`, "stdout");
 
     try {
       const status = await invoke<SystemStatus>("install_tool", {
         request: {
           tool,
-          channel: tool === "yt-dlp" || tool === "all" ? ytDlpChannel() : undefined,
+          channel: tool === "yt-dlp" || tool === "all" ? "stable" : undefined,
         },
       });
       setSystemStatus(status);
-      appendLog(`${tool} installed.`, "stdout");
+      appendLog(`${tool} is ready.`, "stdout");
     } catch (caught) {
       setError(String(caught));
       appendLog(String(caught), "stderr");
@@ -367,7 +365,7 @@ function App() {
 
   async function openToolchainFolder() {
     if (!isTauriRuntime()) {
-      setError("Run Daedalus through Tauri to open the toolchain folder.");
+      setError("Run Daedalus through Tauri to open the system tool location.");
       return;
     }
 
@@ -841,7 +839,7 @@ function App() {
               />
               <SettingsNavButton
                 icon={<Wrench size={16} />}
-                label="Toolchain"
+                label="System tools"
                 active={settingsCategory() === "tools"}
                 onClick={() => setSettingsCategory("tools")}
               />
@@ -1164,37 +1162,22 @@ function App() {
                   <section class="settings-section">
                     <div class="section-title">
                       <Wrench size={16} />
-                      <span>Toolchain</span>
+                      <span>System tools</span>
                     </div>
                     <SettingRow
-                      title="Managed tools folder"
-                      description="Daedalus installs yt-dlp, ffmpeg, and Deno here when it cannot rely on system binaries."
+                      title="System tool location"
+                      description="Daedalus uses yt-dlp, ffmpeg, and Deno from PATH, winget, or Homebrew."
                     >
-                      <p class="settings-note">{systemStatus()?.tools_dir ?? "Tools directory unavailable."}</p>
+                      <p class="settings-note">{systemStatus()?.tools_dir ?? "System tools unavailable."}</p>
                     </SettingRow>
                     <SettingRow
-                      title="Open toolchain"
-                      description="Open the shared RELIQUARY toolchain folder on disk."
+                      title="Open tool location"
+                      description="Open the installed system tool folder on disk."
                     >
                       <button class="secondary-button" type="button" onClick={openToolchainFolder}>
                         <FolderOpen size={16} />
-                        <span>Open toolchain</span>
+                        <span>Open tool location</span>
                       </button>
-                    </SettingRow>
-                    <SettingRow
-                      title="yt-dlp update branch"
-                      description="Choose which yt-dlp release channel Daedalus uses when installing or updating yt-dlp."
-                    >
-                      <label class="select-field settings-select">
-                        <select
-                          value={ytDlpChannel()}
-                          onChange={(event) => setYtDlpChannel(event.currentTarget.value as YtDlpChannel)}
-                        >
-                          <option value="stable">Stable</option>
-                          <option value="nightly">Nightly</option>
-                          <option value="master">Master</option>
-                        </select>
-                      </label>
                     </SettingRow>
                     <ToolRow
                       tool={systemStatus()?.yt_dlp}
@@ -1217,7 +1200,7 @@ function App() {
                     <Show when={missingTools().length > 1}>
                       <button class="install-all-button" type="button" disabled={Boolean(installingTool())} onClick={() => installTool("all")}>
                         <PackageCheck size={15} />
-                        <span>{installingTool() === "all" ? "Installing" : "Install missing tools"}</span>
+                        <span>{installingTool() === "all" ? "Installing" : "Install missing system tools"}</span>
                       </button>
                     </Show>
                   </section>
@@ -1273,12 +1256,12 @@ function StatusDot(props: { installed: boolean }) {
 }
 
 function toolLocationLabel(tool?: ToolStatus) {
-  const source = tool?.managed ? "managed" : "system";
-  return tool?.path ? `${source} · ${compactPath(tool.path)}` : source;
+  const source = tool?.managed ? "package" : "system";
+  return tool?.path ? `${source} - ${compactPath(tool.path)}` : source;
 }
 
 function toolDetailLabel(tool?: ToolStatus) {
-  return tool?.version ? `${tool.version} · ${compactPath(tool.path)}` : toolLocationLabel(tool);
+  return tool?.version ? `${tool.version} - ${compactPath(tool.path)}` : toolLocationLabel(tool);
 }
 
 function compactPath(path?: string) {

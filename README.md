@@ -6,9 +6,9 @@ Daedalus is the RELIQUARY video downloader app. It is designed as a Tauri deskto
 
 - Node.js
 - Rust
-- Optional: `yt-dlp` and `ffmpeg` available in `PATH`
+- Optional: `yt-dlp`, `ffmpeg` and `deno` available in `PATH`
 
-If `yt-dlp` or `ffmpeg` are missing, Daedalus can download managed Windows copies into the shared RELIQUARY toolchain folder from the Settings panel.
+If `yt-dlp`, `ffmpeg` or `deno` are missing, Daedalus can install the system packages from the Settings panel (`winget` on Windows, Homebrew on macOS).
 
 ## Scripts
 
@@ -21,7 +21,7 @@ npm run dev
 
 ## Direction
 
-Daedalus is a standalone RELIQUARY app. Shared behavior such as theme, local files and toolchain access is managed inside the app Settings panel, while commercial access and updates are handled through Patreon.
+Daedalus is a standalone RELIQUARY app. Theme, local files, and system tool access are managed inside the app Settings panel, while commercial access and updates are handled through Patreon.
 
 ## Licence
 Copyright (c) 2026 Seoloon.  
