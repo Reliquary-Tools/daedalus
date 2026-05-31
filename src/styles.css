@@ -17,7 +17,6 @@
   --reliquary-accent-dark: #6f5430;
 
   /* Apps */
-  --obelisk: #66c7d8;
   --daedalus: #d8943a;
   --talos: #b66a3c;
   --chronos: #5e8fd6;
@@ -109,7 +108,7 @@ textarea {
 
 .side-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 18px;
   padding: 24px 18px;
   border-right: 1px solid var(--line);
@@ -289,7 +288,6 @@ textarea {
 
 .icon-button:hover,
 .secondary-button:hover,
-.obelisk-button:hover,
 .settings-button:hover,
 .tool-card button:not(:disabled):hover,
 .install-all-button:not(:disabled):hover,
@@ -392,8 +390,7 @@ textarea {
   gap: 8px;
 }
 
-.settings-button,
-.obelisk-button {
+.settings-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -406,11 +403,6 @@ textarea {
   box-shadow: inset 0 0 0 1px var(--line);
   font-weight: 850;
   cursor: pointer;
-}
-
-.obelisk-button {
-  color: #ffffff;
-  background: var(--ink);
 }
 
 .settings-button.active {
@@ -1106,6 +1098,30 @@ textarea {
   width: min(100%, 260px);
 }
 
+.theme-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 260px);
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.theme-switch button {
+  height: 34px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+.theme-switch button.active {
+  color: #ffffff;
+  background: var(--ink);
+}
+
 .tool-row {
   display: flex;
   align-items: center;
@@ -1193,8 +1209,8 @@ html[data-theme="dark"] .template-input input,
 html[data-theme="dark"] .textarea-control textarea,
 html[data-theme="dark"] .secondary-button,
 html[data-theme="dark"] .icon-button,
-html[data-theme="dark"] .obelisk-button,
-html[data-theme="dark"] .settings-button {
+html[data-theme="dark"] .settings-button,
+html[data-theme="dark"] .theme-switch button:not(.active) {
   color: var(--ink);
   background: var(--paper);
 }
@@ -1220,6 +1236,7 @@ html[data-theme="dark"] .primary-button,
 html[data-theme="dark"] .mode-switch button.active,
 html[data-theme="dark"] .settings-nav button.active,
 html[data-theme="dark"] .settings-button.active,
+html[data-theme="dark"] .theme-switch button.active,
 html[data-theme="dark"] .tag-list button:hover {
   color: #141412;
   background: #f4efe6;

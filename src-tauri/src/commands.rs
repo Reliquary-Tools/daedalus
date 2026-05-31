@@ -27,13 +27,13 @@ const DENO_URL: &str =
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
-struct ObeliskSettings {
+struct AppSettings {
     theme_mode: String,
 }
 
-impl Default for ObeliskSettings {
+impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme_mode: "light".to_string(),
@@ -178,15 +178,30 @@ pub async fn get_system_status() -> Result<SystemStatus, String> {
 }
 
 #[tauri::command]
-pub async fn open_obelisk() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(launch_obelisk)
+pub async fn open_app_folder() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| open_or_create_folder(&app_data_dir()?))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn open_toolchain_folder() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| open_or_create_folder(&tools_bin_dir()?))
         .await
         .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 pub fn get_theme_mode() -> String {
-    read_obelisk_theme_mode()
+    read_app_settings().theme_mode
+}
+
+#[tauri::command]
+pub fn set_theme_mode(theme_mode: String) -> Result<String, String> {
+    let mut settings = read_app_settings();
+    settings.theme_mode = normalize_theme_mode(&theme_mode);
+    write_app_settings(&settings)?;
+    Ok(settings.theme_mode)
 }
 
 #[tauri::command]
@@ -718,14 +733,32 @@ fn user_reliquary_root() -> Result<PathBuf, String> {
     Ok(base_dir.join("RELIQUARY"))
 }
 
-fn read_obelisk_theme_mode() -> String {
-    user_reliquary_root()
+fn settings_path() -> Result<PathBuf, String> {
+    Ok(app_data_dir()?.join("settings.json"))
+}
+
+fn read_app_settings() -> AppSettings {
+    settings_path()
         .ok()
-        .map(|root| root.join("Obelisk").join("settings.json"))
         .and_then(|path| fs::read_to_string(path).ok())
-        .and_then(|content| serde_json::from_str::<ObeliskSettings>(&content).ok())
-        .map(|settings| normalize_theme_mode(&settings.theme_mode))
-        .unwrap_or_else(|| "light".to_string())
+        .and_then(|content| serde_json::from_str::<AppSettings>(&content).ok())
+        .map(|mut settings| {
+            settings.theme_mode = normalize_theme_mode(&settings.theme_mode);
+            settings
+        })
+        .unwrap_or_default()
+}
+
+fn write_app_settings(settings: &AppSettings) -> Result<(), String> {
+    let path = settings_path()?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Unable to locate Daedalus settings directory.".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("Unable to create Daedalus settings directory: {error}"))?;
+    let content = serde_json::to_string_pretty(settings)
+        .map_err(|error| format!("Unable to serialize Daedalus settings: {error}"))?;
+    fs::write(path, content).map_err(|error| format!("Unable to save Daedalus settings: {error}"))
 }
 
 fn normalize_theme_mode(theme_mode: &str) -> String {
@@ -1208,68 +1241,6 @@ fn find_common_windows_tool(name: &str) -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.exists())
 }
 
-fn launch_obelisk() -> Result<(), String> {
-    let executable = resolve_obelisk_executable()
-        .ok_or_else(|| "Obelisk is not built or installed yet.".to_string())?;
-
-    silent_command(&executable)
-        .spawn()
-        .map_err(|error| format!("Unable to launch Obelisk: {error}"))?;
-
-    Ok(())
-}
-
-fn resolve_obelisk_executable() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Some(root) = reliquary_workspace_root() {
-        let obelisk_root = root.join("obelisk");
-        candidates.push(
-            obelisk_root
-                .join("src-tauri")
-                .join("target")
-                .join("release")
-                .join("obelisk.exe"),
-        );
-        candidates.push(
-            obelisk_root
-                .join("src-tauri")
-                .join("target")
-                .join("debug")
-                .join("obelisk.exe"),
-        );
-    }
-
-    if let Some(root) = reliquary_install_root() {
-        candidates.push(root.join("obelisk").join("obelisk.exe"));
-        candidates.push(root.join("Obelisk").join("obelisk.exe"));
-    }
-
-    for key in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
-        if let Ok(base) = env::var(key) {
-            let base = PathBuf::from(base);
-            candidates.push(base.join("Obelisk").join("obelisk.exe"));
-            candidates.push(base.join("RELIQUARY").join("obelisk").join("obelisk.exe"));
-            candidates.push(base.join("RELIQUARY").join("Obelisk").join("obelisk.exe"));
-            candidates.push(base.join("Programs").join("Obelisk").join("obelisk.exe"));
-            candidates.push(
-                base.join("Programs")
-                    .join("RELIQUARY")
-                    .join("obelisk")
-                    .join("obelisk.exe"),
-            );
-            candidates.push(
-                base.join("Programs")
-                    .join("RELIQUARY")
-                    .join("Obelisk")
-                    .join("obelisk.exe"),
-            );
-        }
-    }
-
-    candidates.into_iter().find(|path| path.is_file())
-}
-
 fn reliquary_workspace_root() -> Option<PathBuf> {
     let mut starts = Vec::new();
 
@@ -1285,7 +1256,7 @@ fn reliquary_workspace_root() -> Option<PathBuf> {
 
     for start in starts {
         for ancestor in start.ancestors() {
-            if ancestor.join("obelisk").is_dir() && ancestor.join("daedalus").is_dir() {
+            if ancestor.join("daedalus").is_dir() && ancestor.join("assets").is_dir() {
                 return Some(ancestor.to_path_buf());
             }
         }
@@ -1300,7 +1271,37 @@ fn reliquary_install_root() -> Option<PathBuf> {
     let root = app_dir.parent()?;
     let app_name = app_dir.file_name()?.to_string_lossy().to_ascii_lowercase();
 
-    matches!(app_name.as_str(), "daedalus" | "chronos" | "obelisk").then(|| root.to_path_buf())
+    matches!(app_name.as_str(), "daedalus" | "chronos").then(|| root.to_path_buf())
+}
+
+fn open_or_create_folder(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(|error| format!("Unable to create folder: {error}"))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        silent_command("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Unable to open folder: {error}"))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        silent_command("open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Unable to open folder: {error}"))?;
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        silent_command("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Unable to open folder: {error}"))?;
+    }
+
+    Ok(())
 }
 
 fn silent_command(program: impl AsRef<OsStr>) -> Command {

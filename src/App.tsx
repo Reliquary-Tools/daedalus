@@ -10,7 +10,6 @@ import {
   Film,
   FolderInput,
   FolderOpen,
-  Landmark,
   ListVideo,
   Music2,
   PackageCheck,
@@ -80,6 +79,7 @@ type AppView = "download" | "settings";
 type SettingsCategory = "general" | "downloads" | "playlists" | "files" | "tools";
 type YtDlpChannel = "stable" | "nightly" | "master";
 type NetworkStack = "auto" | "ipv4" | "ipv6";
+type ThemeMode = "light" | "dark";
 
 const qualityOptions = [
   { value: "best", label: "Best" },
@@ -166,6 +166,7 @@ function App() {
   const [currentView, setCurrentView] = createSignal<AppView>("download");
   const [settingsCategory, setSettingsCategory] = createSignal<SettingsCategory>("general");
   const [error, setError] = createSignal("");
+  const [themeMode, setThemeModeState] = createSignal<ThemeMode>("light");
   let consoleOutputRef: HTMLDivElement | undefined;
 
   const urls = createMemo(() =>
@@ -206,6 +207,7 @@ function App() {
 
   onMount(async () => {
     await refreshStatus();
+    await syncThemeSetting();
 
     if (!isTauriRuntime()) {
       return;
@@ -319,14 +321,58 @@ function App() {
     }
   }
 
-  async function openObelisk() {
+  async function syncThemeSetting() {
     if (!isTauriRuntime()) {
-      setError("Run Daedalus through Tauri to open Obelisk.");
       return;
     }
 
     try {
-      await invoke("open_obelisk");
+      const mode = await invoke<string>("get_theme_mode");
+      setThemeModeState(mode === "dark" ? "dark" : "light");
+    } catch {
+      setThemeModeState("light");
+    }
+  }
+
+  async function changeThemeMode(mode: ThemeMode) {
+    setThemeModeState(mode);
+    document.documentElement.dataset.theme = mode;
+
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    try {
+      const savedMode = await invoke<string>("set_theme_mode", { themeMode: mode });
+      setThemeModeState(savedMode === "dark" ? "dark" : "light");
+      setError("");
+    } catch (caught) {
+      setError(String(caught));
+    }
+  }
+
+  async function openAppFolder() {
+    if (!isTauriRuntime()) {
+      setError("Run Daedalus through Tauri to open the app folder.");
+      return;
+    }
+
+    try {
+      await invoke("open_app_folder");
+      setError("");
+    } catch (caught) {
+      setError(String(caught));
+    }
+  }
+
+  async function openToolchainFolder() {
+    if (!isTauriRuntime()) {
+      setError("Run Daedalus through Tauri to open the toolchain folder.");
+      return;
+    }
+
+    try {
+      await invoke("open_toolchain_folder");
       setError("");
     } catch (caught) {
       setError(String(caught));
@@ -566,42 +612,6 @@ function App() {
           </div>
         </div>
 
-        <section class="tools-panel" aria-label="Tool status">
-          <div class="section-title row-title">
-            <Wrench size={16} />
-            <span>Toolchain</span>
-            <button class="icon-button compact" type="button" title="Refresh tools" onClick={refreshStatus}>
-              <RefreshCcw size={15} />
-            </button>
-          </div>
-
-          <ToolCard
-            tool={systemStatus()?.yt_dlp}
-            fallback="yt-dlp"
-            installing={installingTool() === "yt-dlp" || installingTool() === "all"}
-            onInstall={() => installTool("yt-dlp")}
-          />
-          <ToolCard
-            tool={systemStatus()?.ffmpeg}
-            fallback="ffmpeg"
-            installing={installingTool() === "ffmpeg" || installingTool() === "all"}
-            onInstall={() => installTool("ffmpeg")}
-          />
-          <ToolCard
-            tool={systemStatus()?.deno}
-            fallback="deno"
-            installing={installingTool() === "deno" || installingTool() === "all"}
-            onInstall={() => installTool("deno")}
-          />
-
-          <Show when={missingTools().length > 1}>
-            <button class="install-all-button" type="button" disabled={Boolean(installingTool())} onClick={() => installTool("all")}>
-              <PackageCheck size={15} />
-              <span>{installingTool() === "all" ? "Installing" : "Install missing tools"}</span>
-            </button>
-          </Show>
-        </section>
-
         <section class="queue-panel" aria-label="Queue">
           <div class="section-title">
             <ListVideo size={16} />
@@ -628,10 +638,6 @@ function App() {
         </section>
 
         <div class="side-actions">
-          <button class="obelisk-button" type="button" onClick={openObelisk}>
-            <Landmark size={17} />
-            <span>Obelisk</span>
-          </button>
           <button
             class={`settings-button ${currentView() === "settings" ? "active" : ""}`}
             type="button"
@@ -849,6 +855,28 @@ function App() {
                       <SlidersHorizontal size={16} />
                       <span>General</span>
                     </div>
+                    <SettingRow
+                      title="Appearance"
+                      description="Choose the local Daedalus theme. Each RELIQUARY app now stores its own preference."
+                    >
+                      <div class="theme-switch" role="group" aria-label="Theme">
+                        <button class={themeMode() === "light" ? "active" : ""} type="button" onClick={() => void changeThemeMode("light")}>
+                          Light
+                        </button>
+                        <button class={themeMode() === "dark" ? "active" : ""} type="button" onClick={() => void changeThemeMode("dark")}>
+                          Dark
+                        </button>
+                      </div>
+                    </SettingRow>
+                    <SettingRow
+                      title="App folder"
+                      description="Open the local Daedalus folder used for settings and download archives."
+                    >
+                      <button class="secondary-button" type="button" onClick={openAppFolder}>
+                        <FolderOpen size={16} />
+                        <span>Open app folder</span>
+                      </button>
+                    </SettingRow>
                     <SettingRow
                       title="Output directory"
                       description="Default folder used for new downloads. The browse button opens the native folder picker."
@@ -1145,6 +1173,15 @@ function App() {
                       <p class="settings-note">{systemStatus()?.tools_dir ?? "Tools directory unavailable."}</p>
                     </SettingRow>
                     <SettingRow
+                      title="Open toolchain"
+                      description="Open the shared RELIQUARY toolchain folder on disk."
+                    >
+                      <button class="secondary-button" type="button" onClick={openToolchainFolder}>
+                        <FolderOpen size={16} />
+                        <span>Open toolchain</span>
+                      </button>
+                    </SettingRow>
+                    <SettingRow
                       title="yt-dlp update branch"
                       description="Choose which yt-dlp release channel Daedalus uses when installing or updating yt-dlp."
                     >
@@ -1177,6 +1214,12 @@ function App() {
                       installing={installingTool() === "deno" || installingTool() === "all"}
                       onInstall={() => installTool("deno")}
                     />
+                    <Show when={missingTools().length > 1}>
+                      <button class="install-all-button" type="button" disabled={Boolean(installingTool())} onClick={() => installTool("all")}>
+                        <PackageCheck size={15} />
+                        <span>{installingTool() === "all" ? "Installing" : "Install missing tools"}</span>
+                      </button>
+                    </Show>
                   </section>
                 </Match>
               </Switch>
