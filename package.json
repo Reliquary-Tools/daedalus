@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build --no-bundle",
+    "build:windows": "tauri build --bundles msi",
+    "build:mac": "tauri build --bundles dmg --no-sign",
+    "build:mac:signed": "tauri build --bundles dmg",
+    "build:mac:universal": "tauri build --target universal-apple-darwin --bundles dmg --no-sign",
     "dev:frontend": "vite --host 127.0.0.1 --port 1420",
     "build:frontend": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1"
