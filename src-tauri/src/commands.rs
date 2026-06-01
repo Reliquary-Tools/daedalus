@@ -534,6 +534,9 @@ enum SystemTool {
     Deno,
 }
 
+const HOMEBREW_INSTALL_NOTICE: &str = "Homebrew is not installed. Reliquary will install Homebrew with the official Homebrew install script, then use Homebrew to install the required system tools.";
+const HOMEBREW_INSTALL_COMMAND: &str = r#"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)""#;
+
 fn install_system_tool(tool: SystemTool) -> Result<(), String> {
     let install_result = if cfg!(target_os = "windows") {
         install_with_winget(tool)
@@ -583,10 +586,11 @@ fn install_with_winget(tool: SystemTool) -> Result<(), String> {
 
 fn install_with_homebrew(tool: SystemTool) -> Result<(), String> {
     let formula = homebrew_formula(tool);
-    let output = silent_command("brew")
+    let brew = ensure_homebrew()?;
+    let output = silent_command(&brew)
         .args(["install", formula])
         .output()
-        .map_err(|error| format!("Homebrew is required to install {formula}: {error}"))?;
+        .map_err(|error| format!("Unable to run Homebrew at {}: {error}", brew.display()))?;
 
     if output.status.success() {
         Ok(())
@@ -595,6 +599,48 @@ fn install_with_homebrew(tool: SystemTool) -> Result<(), String> {
             &format!("brew install failed for {formula}"),
             &output.stderr,
             &output.stdout,
+        ))
+    }
+}
+
+fn ensure_homebrew() -> Result<PathBuf, String> {
+    if let Some(path) = find_homebrew_executable() {
+        return Ok(path);
+    }
+
+    install_homebrew()?;
+
+    find_homebrew_executable().ok_or_else(|| {
+        "Homebrew installation finished, but the brew executable was not found in /opt/homebrew/bin, /usr/local/bin, or PATH. Restart the app or open a new terminal session, then try again.".to_string()
+    })
+}
+
+fn find_homebrew_executable() -> Option<PathBuf> {
+    which::which("brew").ok().or_else(|| {
+        [
+            PathBuf::from("/opt/homebrew/bin/brew"),
+            PathBuf::from("/usr/local/bin/brew"),
+        ]
+        .into_iter()
+        .find(|path| path.exists())
+    })
+}
+
+fn install_homebrew() -> Result<(), String> {
+    let output = silent_command("/bin/bash")
+        .args(["-lc", HOMEBREW_INSTALL_COMMAND])
+        .env("NONINTERACTIVE", "1")
+        .output()
+        .map_err(|error| {
+            format!("{HOMEBREW_INSTALL_NOTICE} Unable to start the installer: {error}")
+        })?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{HOMEBREW_INSTALL_NOTICE}\n{}",
+            command_error("Homebrew install failed", &output.stderr, &output.stdout)
         ))
     }
 }

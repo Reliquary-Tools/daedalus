@@ -333,7 +333,7 @@ function App() {
 
     setInstallingTool(tool);
     setError("");
-    appendLog(`Installing ${tool} with the system package manager...`, "stdout");
+    appendLog(`Installing ${tool} with the system package manager...${macHomebrewInstallNotice()}`, "stdout");
 
     try {
       const status = await invoke<SystemStatus>("install_tool", {
@@ -1336,7 +1336,7 @@ function App() {
                     </div>
                     <SettingRow
                       title="System tool location"
-                      description="Daedalus uses yt-dlp, ffmpeg, and Deno from PATH, winget, or Homebrew."
+                      description={`Daedalus uses yt-dlp, ffmpeg, and Deno from PATH, winget, or Homebrew.${macHomebrewInstallNotice()}`}
                     >
                       <p class="settings-note">{systemStatus()?.tools_dir ?? "System tools unavailable."}</p>
                     </SettingRow>
@@ -1505,6 +1505,24 @@ function labelFromUrl(url: string) {
 
 function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function macHomebrewInstallNotice() {
+  if (!isMacRuntime()) {
+    return "";
+  }
+
+  return " If Homebrew is missing, Reliquary will install it first with the official Homebrew script.";
+}
+
+function isMacRuntime() {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  const platform = navigator.platform.toLowerCase();
+  const userAgent = navigator.userAgent.toLowerCase();
+  return platform.includes("mac") || userAgent.includes("macintosh") || userAgent.includes("mac os");
 }
 
 function applyThemeMode(themeMode: ThemeMode) {
