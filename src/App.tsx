@@ -772,7 +772,7 @@ function App() {
           </div>
           <div>
             <h1>Daedalus</h1>
-            <p>RELIQUARY</p>
+            <p>DOWNLOADER</p>
           </div>
         </div>
 
