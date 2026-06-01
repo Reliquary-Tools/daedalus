@@ -385,9 +385,12 @@ function App() {
     } catch {
       try {
         const mode = await invoke<string>("get_theme_mode");
-        setThemeModeState(mode === "dark" ? "dark" : "light");
+        const nextMode = mode === "dark" ? "dark" : "light";
+        setThemeModeState(nextMode);
+        applyThemeMode(nextMode);
       } catch {
         setThemeModeState("light");
+        applyThemeMode("light");
       }
     } finally {
       settingsLoaded = true;
@@ -398,6 +401,7 @@ function App() {
     try {
       const savedSettings = await invoke<DaedalusSettings>("set_app_settings", { settings });
       if (savedSettings.theme_mode !== themeMode()) {
+        setThemeModeState(savedSettings.theme_mode);
         applyThemeMode(savedSettings.theme_mode);
       }
       setError("");
@@ -416,7 +420,9 @@ function App() {
 
     try {
       const savedMode = await invoke<string>("set_theme_mode", { themeMode: mode });
-      setThemeModeState(savedMode === "dark" ? "dark" : "light");
+      const nextMode = savedMode === "dark" ? "dark" : "light";
+      setThemeModeState(nextMode);
+      applyThemeMode(nextMode);
       setError("");
     } catch (caught) {
       setError(String(caught));
@@ -425,6 +431,7 @@ function App() {
 
   function applyAppSettings(settings: DaedalusSettings) {
     const nextTheme = settings.theme_mode === "dark" ? "dark" : "light";
+    setThemeModeState(nextTheme);
     applyThemeMode(nextTheme);
     if (settings.output_dir.trim()) {
       setOutputDir(settings.output_dir);
@@ -956,54 +963,60 @@ function App() {
 
       <Show when={settingsOpen()}>
         <div class="settings-overlay" role="presentation" onClick={() => setSettingsOpen(false)}>
-        <section class="settings-dialog settings-page" role="dialog" aria-modal="true" aria-label="Daedalus settings" onClick={(event) => event.stopPropagation()}>
-          <header class="topbar">
-            <div>
-              <p class="eyebrow">Daedalus</p>
-              <h2>Settings</h2>
-            </div>
-            <button class="secondary-button" type="button" onClick={() => setSettingsOpen(false)}>
-              <X size={17} />
-              <span>Close</span>
-            </button>
-          </header>
+          <section
+            class="settings-dialog settings-page"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Daedalus settings"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header class="topbar">
+              <div>
+                <p class="eyebrow">Daedalus</p>
+                <h2>Settings</h2>
+              </div>
+              <button class="secondary-button" type="button" onClick={() => setSettingsOpen(false)}>
+                <X size={17} />
+                <span>Close</span>
+              </button>
+            </header>
 
-          <div class="settings-layout">
-            <nav class="settings-nav" aria-label="Settings categories">
-              <SettingsNavButton
-                icon={<SlidersHorizontal size={16} />}
-                label="General"
-                active={settingsCategory() === "general"}
-                onClick={() => setSettingsCategory("general")}
-              />
-              <SettingsNavButton
-                icon={<Download size={16} />}
-                label="Downloads"
-                active={settingsCategory() === "downloads"}
-                onClick={() => setSettingsCategory("downloads")}
-              />
-              <SettingsNavButton
-                icon={<ListVideo size={16} />}
-                label="Playlists"
-                active={settingsCategory() === "playlists"}
-                onClick={() => setSettingsCategory("playlists")}
-              />
-              <SettingsNavButton
-                icon={<FolderInput size={16} />}
-                label="Files"
-                active={settingsCategory() === "files"}
-                onClick={() => setSettingsCategory("files")}
-              />
-              <SettingsNavButton
-                icon={<Wrench size={16} />}
-                label="System tools"
-                active={settingsCategory() === "tools"}
-                onClick={() => setSettingsCategory("tools")}
-              />
-            </nav>
+            <div class="settings-layout">
+              <nav class="settings-nav" aria-label="Settings categories">
+                <SettingsNavButton
+                  icon={<SlidersHorizontal size={16} />}
+                  label="General"
+                  active={settingsCategory() === "general"}
+                  onClick={() => setSettingsCategory("general")}
+                />
+                <SettingsNavButton
+                  icon={<Download size={16} />}
+                  label="Downloads"
+                  active={settingsCategory() === "downloads"}
+                  onClick={() => setSettingsCategory("downloads")}
+                />
+                <SettingsNavButton
+                  icon={<ListVideo size={16} />}
+                  label="Playlists"
+                  active={settingsCategory() === "playlists"}
+                  onClick={() => setSettingsCategory("playlists")}
+                />
+                <SettingsNavButton
+                  icon={<FolderInput size={16} />}
+                  label="Files"
+                  active={settingsCategory() === "files"}
+                  onClick={() => setSettingsCategory("files")}
+                />
+                <SettingsNavButton
+                  icon={<Wrench size={16} />}
+                  label="System tools"
+                  active={settingsCategory() === "tools"}
+                  onClick={() => setSettingsCategory("tools")}
+                />
+              </nav>
 
-            <main class="settings-content">
-              <Switch>
+              <main class="settings-content">
+                <Switch>
                 <Match when={settingsCategory() === "general"}>
                   <section class="settings-section">
                     <div class="section-title">
@@ -1362,10 +1375,10 @@ function App() {
                     </Show>
                   </section>
                 </Match>
-              </Switch>
-            </main>
-          </div>
-        </section>
+                </Switch>
+              </main>
+            </div>
+          </section>
         </div>
       </Show>
     </main>
@@ -1396,7 +1409,7 @@ function ToolRow(props: { tool?: ToolStatus; fallback: string; installing: boole
   return (
     <article class={`tool-row ${installed() ? "ready" : "missing"}`} title={props.tool?.path ?? props.tool?.error ?? props.fallback}>
       <div>
-          <StatusDot installed={installed()} />
+        <StatusDot installed={installed()} />
         <div>
           <strong>{props.tool?.name ?? props.fallback}</strong>
           <span>{installed() ? toolDetailLabel(props.tool) : props.tool?.error ?? "Not installed"}</span>
